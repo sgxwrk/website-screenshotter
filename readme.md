@@ -1,6 +1,6 @@
 # Website Auto-Screenshotter 📸
 
-An automated, Python-based web crawler that crawls a website starting from a given URL and automatically takes a full-page screenshot of every subpage it finds.
+An automated, Python-based web crawler that crawls a website starting from a given URL and automatically takes a full-page screenshot of every subpage it finds. Useful for visual regression checks, archiving a site's current state, or generating a quick visual overview of a website's pages.
 
 ## 🌟 Features
 
@@ -13,17 +13,22 @@ An automated, Python-based web crawler that crawls a website starting from a giv
 * **Polite:** Small delay between requests (`--delay`) and optional blocking of tracking/ads requests, so the target site isn't put under unnecessary load.
 * **Loop Protection:** Automatically detects already visited or already scheduled pages.
 
-## ⚠️ Note
+## 📋 Requirements
 
-Please only crawl websites you're authorized to crawl (your own sites, or sites you have permission for). The tool respects `robots.txt` by default, but this does not replace a legal review of the target site's terms of use.
+* Python 3.9 or newer
+* pip
 
----
+Python dependencies ([`requirements.txt`](requirements.txt)):
 
-## 🛠️ Installation
+* [Playwright](https://playwright.dev/python/) — browser automation and screenshotting
+* [Beautiful Soup](https://www.crummy.com/software/BeautifulSoup/) — HTML link extraction
 
-### 1. Open the repository
+## 🚀 Getting Started
+
+### 1. Clone the repository
 
 ```bash
+git clone https://github.com/sgxwrk/website-screenshotter.git
 cd website-screenshotter
 ```
 
@@ -34,21 +39,23 @@ python3 -m pip install -r requirements.txt
 python3 -m playwright install
 ```
 
-### Alternative: Use the setup script
-
-On macOS/Linux you can instead use the included bash script `setup.sh` directly:
+Alternatively, on macOS/Linux you can use the included setup script, which runs the same two steps:
 
 ```bash
 chmod +x setup.sh && ./setup.sh
 ```
 
-## 🚀 Usage
+### 3. Run it
 
 ```bash
 python3 run.py https://example.com
 ```
 
-### Options
+Screenshots are saved to `screenshots/<domain>/`.
+
+## ⚙️ Configuration
+
+All options are passed as command-line flags to `run.py`:
 
 | Flag | Default | Description |
 |---|---|---|
@@ -65,3 +72,19 @@ Example with higher concurrency and more pages:
 ```bash
 python3 run.py https://example.com --max-pages 100 --concurrency 5
 ```
+
+## ⚠️ Responsible Use
+
+Please only crawl websites you're authorized to crawl (your own sites, or sites you have permission for). The tool respects `robots.txt` by default, but this does not replace a legal review of the target site's terms of use.
+
+## 🐛 Support
+
+Found a bug or have a feature request? Please [open an issue](../../issues).
+
+## 🤝 Contributing
+
+Contributions are welcome. Feel free to open an issue to discuss a change, or submit a pull request directly.
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
