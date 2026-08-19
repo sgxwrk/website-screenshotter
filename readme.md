@@ -1,66 +1,66 @@
 # Website Auto-Screenshotter 📸
 
-Ein automatisierter Web-Crawler auf Python-Basis, der eine Website von einer Start-URL aus durchsucht (crawlt) und von jeder gefundenen Unterseite automatisch einen Full-Page-Screenshot erstellt.
+An automated, Python-based web crawler that crawls a website starting from a given URL and automatically takes a full-page screenshot of every subpage it finds.
 
 ## 🌟 Features
 
-* **Parallel:** Crawlt mehrere Seiten gleichzeitig (konfigurierbar über `--concurrency`).
-* **Automatisch & Vollständig:** Speichert die gesamte Länge der Webseite (auch Scroll-Bereiche).
-* **Organisierte Struktur:** Speichert Screenshots pro Domain automatisch in eigenen Unterordnern (z. B. `screenshots/example_com/`).
-* **Lazy-Loading Support:** Automatisches Scrollen sorgt dafür, dass nachgeladene Bilder mit erfasst werden.
-* **Saubere, eindeutige Dateinamen:** Konvertiert URLs automatisch in gültige Bildnamen; Query-Parameter werden per Hash eindeutig gehalten.
-* **robots.txt-Respekt:** Beachtet standardmäßig `robots.txt` der Zielseite (kann mit `--ignore-robots` deaktiviert werden).
-* **Höflich:** Kleine Pause zwischen Requests (`--delay`) und optionales Blocken von Tracking-/Ads-Requests, um die Zielseite nicht unnötig zu belasten.
-* **Loop-Schutz:** Erkennt bereits besuchte bzw. geplante Seiten automatisch.
+* **Parallel:** Crawls multiple pages at once (configurable via `--concurrency`).
+* **Automatic & Complete:** Captures the entire length of the page (including scroll areas).
+* **Organized Structure:** Automatically saves screenshots per domain into their own subfolders (e.g. `screenshots/example_com/`).
+* **Lazy-Loading Support:** Automatic scrolling ensures lazily loaded images are captured too.
+* **Clean, Unique Filenames:** Automatically converts URLs into valid image names; query parameters are kept unique via a hash.
+* **Respects robots.txt:** Honors the target site's `robots.txt` by default (can be disabled with `--ignore-robots`).
+* **Polite:** Small delay between requests (`--delay`) and optional blocking of tracking/ads requests, so the target site isn't put under unnecessary load.
+* **Loop Protection:** Automatically detects already visited or already scheduled pages.
 
-## ⚠️ Hinweis
+## ⚠️ Note
 
-Bitte crawle nur Websites, für die du dazu berechtigt bist (eigene Seiten oder mit Erlaubnis). Das Tool respektiert standardmäßig `robots.txt`, ersetzt aber keine rechtliche Prüfung der Nutzungsbedingungen der Zielseite.
+Please only crawl websites you're authorized to crawl (your own sites, or sites you have permission for). The tool respects `robots.txt` by default, but this does not replace a legal review of the target site's terms of use.
 
 ---
 
 ## 🛠️ Installation
 
-### 1. Repository öffnen
+### 1. Open the repository
 
 ```bash
 cd website-screenshotter
 ```
 
-### 2. Abhängigkeiten installieren
+### 2. Install dependencies
 
 ```bash
 python3 -m pip install -r requirements.txt
 python3 -m playwright install
 ```
 
-### Alternative: Setup-Skript nutzen
+### Alternative: Use the setup script
 
-Unter macOS/Linux kann stattdessen direkt das mitgelieferte Bash-Skript `setup.sh` genutzt werden:
+On macOS/Linux you can instead use the included bash script `setup.sh` directly:
 
 ```bash
 chmod +x setup.sh && ./setup.sh
 ```
 
-## 🚀 Nutzung
+## 🚀 Usage
 
 ```bash
 python3 run.py https://example.com
 ```
 
-### Optionen
+### Options
 
-| Flag | Standard | Beschreibung |
+| Flag | Default | Description |
 |---|---|---|
-| `--max-pages` | 50 | Maximale Anzahl zu crawlender Seiten |
-| `--concurrency` | 3 | Anzahl paralleler Browser-Tabs |
-| `--delay` | 0.5 | Pause in Sekunden zwischen Requests pro Worker |
-| `--timeout` | 30 | Timeout pro Seite in Sekunden |
-| `--output-dir` | screenshots | Basis-Ausgabeordner |
-| `--ignore-robots` | aus | `robots.txt` ignorieren (nicht empfohlen) |
-| `--no-block-trackers` | aus | Bekannte Tracking-/Ads-Requests nicht blockieren |
+| `--max-pages` | 50 | Maximum number of pages to crawl |
+| `--concurrency` | 3 | Number of parallel browser tabs |
+| `--delay` | 0.5 | Delay in seconds between requests per worker |
+| `--timeout` | 30 | Timeout per page in seconds |
+| `--output-dir` | screenshots | Base output directory |
+| `--ignore-robots` | off | Ignore `robots.txt` (not recommended) |
+| `--no-block-trackers` | off | Don't block known tracking/ads requests |
 
-Beispiel mit höherer Parallelität und mehr Seiten:
+Example with higher concurrency and more pages:
 
 ```bash
 python3 run.py https://example.com --max-pages 100 --concurrency 5

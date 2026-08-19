@@ -10,7 +10,7 @@ from urllib.robotparser import RobotFileParser
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
-# Datei-Endungen, die keine crawlbaren HTML-Seiten sind und übersprungen werden.
+# File extensions that are not crawlable HTML pages and are skipped.
 SKIP_EXTENSIONS = {
     ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico",
     ".zip", ".rar", ".7z", ".mp4", ".mp3", ".avi", ".mov",
@@ -18,8 +18,8 @@ SKIP_EXTENSIONS = {
     ".css", ".js", ".woff", ".woff2", ".ttf", ".eot", ".xml",
 }
 
-# Bekannte Tracking-/Ads-Domains, deren Requests geblockt werden (schont Ladezeit,
-# ohne Bilder zu blockieren, die für den Screenshot benötigt werden).
+# Known tracking/ads domains whose requests get blocked (saves load time,
+# without blocking images that are needed for the screenshot).
 BLOCKED_RESOURCE_DOMAINS = (
     "google-analytics.com", "googletagmanager.com", "doubleclick.net",
     "facebook.net", "facebook.com/tr", "hotjar.com", "segment.com",
@@ -28,7 +28,7 @@ BLOCKED_RESOURCE_DOMAINS = (
 
 
 def normalize_domain(netloc: str) -> str:
-    """Behandelt z.B. 'www.example.com' und 'example.com' als dieselbe Domain."""
+    """Treats e.g. 'www.example.com' and 'example.com' as the same domain."""
     return netloc.lower().removeprefix("www.")
 
 
@@ -37,14 +37,14 @@ def normalize_url(url: str) -> str:
 
 
 def sanitize_filename(url: str) -> str:
-    """Macht aus dem URL-Pfad (+ Query) einen gültigen, eindeutigen Dateinamen."""
+    """Turns a URL path (+ query) into a valid, unique filename."""
     parsed = urlparse(url)
     path = parsed.path.strip("/")
     base = re.sub(r"[^\w\-]", "_", path) if path else "index"
 
     if parsed.query:
-        # Kurzer Hash der Query, damit z.B. ?id=1 und ?id=2 nicht denselben
-        # Dateinamen erzeugen und sich gegenseitig überschreiben.
+        # Short hash of the query string, so e.g. ?id=1 and ?id=2 don't
+        # produce the same filename and overwrite each other.
         query_hash = hashlib.md5(parsed.query.encode()).hexdigest()[:8]
         base = f"{base}-{query_hash}"
 
@@ -60,7 +60,7 @@ def is_crawlable_link(url: str) -> bool:
 
 
 async def auto_scroll(page):
-    """Scrollt die Seite herunter, um Lazy-Loaded Bilder auszulösen."""
+    """Scrolls the page down to trigger lazy-loaded images."""
     await page.evaluate(
         """async () => {
         await new Promise((resolve) => {
@@ -99,7 +99,7 @@ class Crawler:
         if not args.ignore_robots:
             self.robot_parser = self._load_robots_txt()
 
-        self.queue = None  # in run() erzeugt (muss im aktiven Event-Loop entstehen)
+        self.queue = None  # created in run() (must be created within the active event loop)
         self.lock = None
         self.scheduled = {self.start_url}
         self.visited_count = 0
@@ -114,7 +114,7 @@ class Crawler:
         try:
             parser.read()
         except Exception:
-            return None  # robots.txt nicht erreichbar -> nicht blockieren
+            return None  # robots.txt unreachable -> don't block
         return parser
 
     def _allowed_by_robots(self, url: str) -> bool:
@@ -148,7 +148,7 @@ class Crawler:
             filepath = os.path.join(self.output_dir, filename)
             await page.screenshot(path=filepath, full_page=True)
             self.saved.append((url, filepath))
-            print(f"  -> Gespeichert: {filepath}")
+            print(f"  -> Saved: {filepath}")
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
@@ -165,7 +165,7 @@ class Crawler:
 
         except Exception as e:
             self.failed.append((url, str(e)))
-            print(f"  -> Fehler bei {url}: {e}")
+            print(f"  -> Error at {url}: {e}")
             return []
         finally:
             await page.close()
@@ -191,11 +191,11 @@ class Crawler:
 
             if not self._allowed_by_robots(url):
                 self.skipped_robots.append(url)
-                print(f"[{count}/{self.max_pages}] Blockiert durch robots.txt: {url}")
+                print(f"[{count}/{self.max_pages}] Blocked by robots.txt: {url}")
                 self.queue.task_done()
                 continue
 
-            print(f"[{count}/{self.max_pages}] Lade (Worker {worker_id}): {url}")
+            print(f"[{count}/{self.max_pages}] Loading (worker {worker_id}): {url}")
             new_links = await self._process_url(context, url)
 
             async with self.lock:
@@ -212,9 +212,9 @@ class Crawler:
         self.queue = asyncio.Queue()
         self.lock = asyncio.Lock()
 
-        print(f"Start-URL: {self.start_url}")
-        print(f"Zielordner für diesen Run: '{self.output_dir}'")
-        print(f"Max. Seiten: {self.max_pages} | Parallelität: {self.concurrency}\n")
+        print(f"Start URL: {self.start_url}")
+        print(f"Output folder for this run: '{self.output_dir}'")
+        print(f"Max pages: {self.max_pages} | Concurrency: {self.concurrency}\n")
 
         await self.queue.put(self.start_url)
 
@@ -229,36 +229,36 @@ class Crawler:
             await asyncio.gather(*workers)
             await browser.close()
 
-        print("\n--- Zusammenfassung ---")
-        print(f"Gespeichert: {len(self.saved)}")
-        print(f"Fehlgeschlagen: {len(self.failed)}")
+        print("\n--- Summary ---")
+        print(f"Saved: {len(self.saved)}")
+        print(f"Failed: {len(self.failed)}")
         if self.failed:
             for url, err in self.failed:
                 print(f"  - {url}: {err}")
         if self.skipped_robots:
-            print(f"Durch robots.txt blockiert: {len(self.skipped_robots)}")
-        print(f"\nFertig! Screenshots liegen in '{self.output_dir}'.")
+            print(f"Blocked by robots.txt: {len(self.skipped_robots)}")
+        print(f"\nDone! Screenshots are in '{self.output_dir}'.")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Crawlt eine Website und erstellt Full-Page-Screenshots aller Unterseiten."
+        description="Crawls a website and takes full-page screenshots of every subpage."
     )
-    parser.add_argument("url", help="Start-URL, z. B. https://example.com")
-    parser.add_argument("--max-pages", type=int, default=50, help="Maximale Anzahl Seiten (Standard: 50)")
-    parser.add_argument("--concurrency", type=int, default=3, help="Parallele Browser-Tabs (Standard: 3)")
-    parser.add_argument("--delay", type=float, default=0.5, help="Pause in Sekunden zwischen Requests pro Worker (Standard: 0.5)")
-    parser.add_argument("--timeout", type=int, default=30, help="Timeout pro Seite in Sekunden (Standard: 30)")
-    parser.add_argument("--output-dir", default="screenshots", help="Basis-Ausgabeordner (Standard: screenshots)")
-    parser.add_argument("--ignore-robots", action="store_true", help="robots.txt ignorieren (nicht empfohlen)")
-    parser.add_argument("--no-block-trackers", action="store_true", help="Bekannte Tracking/Ads-Requests nicht blockieren")
+    parser.add_argument("url", help="Start URL, e.g. https://example.com")
+    parser.add_argument("--max-pages", type=int, default=50, help="Maximum number of pages (default: 50)")
+    parser.add_argument("--concurrency", type=int, default=3, help="Parallel browser tabs (default: 3)")
+    parser.add_argument("--delay", type=float, default=0.5, help="Delay in seconds between requests per worker (default: 0.5)")
+    parser.add_argument("--timeout", type=int, default=30, help="Timeout per page in seconds (default: 30)")
+    parser.add_argument("--output-dir", default="screenshots", help="Base output directory (default: screenshots)")
+    parser.add_argument("--ignore-robots", action="store_true", help="Ignore robots.txt (not recommended)")
+    parser.add_argument("--no-block-trackers", action="store_true", help="Don't block known tracking/ads requests")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     if args.concurrency < 1:
-        sys.exit("Fehler: --concurrency muss mindestens 1 sein.")
+        sys.exit("Error: --concurrency must be at least 1.")
     crawler = Crawler(args)
     asyncio.run(crawler.run())
 
