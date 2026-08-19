@@ -1,2 +1,4 @@
 playwright>=1.40,<2.0
 beautifulsoup4>=4.12,<5.0
+Pillow>=10.0,<12.0
+numpy>=1.24,<3.0

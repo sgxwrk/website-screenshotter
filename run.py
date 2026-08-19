@@ -177,17 +177,160 @@ async def hide_fixed_elements(page):
     floating at a seemingly random spot mid-page instead of pinned to the
     real screen edge. A screenshot is a static record, so hiding them right
     before capture avoids these glitches entirely - a standard technique for
-    full-page screenshot tools."""
+    full-page screenshot tools. Elements that cover almost the entire
+    viewport are left alone: on 'virtual scroll' sites (Locomotive Scroll,
+    Lenis, ...) that's usually the real content wrapper, not a decorative
+    overlay - see detect_virtual_scroll_container()."""
     await page.evaluate(
         """() => {
+        const vw = window.innerWidth, vh = window.innerHeight;
         document.querySelectorAll('*').forEach((el) => {
             const position = getComputedStyle(el).position;
-            if (position === 'fixed' || position === 'sticky') {
+            if (position !== 'fixed' && position !== 'sticky') return;
+            const rect = el.getBoundingClientRect();
+            const coversViewport = rect.width >= vw * 0.9 && rect.height >= vh * 0.9;
+            if (!coversViewport) {
                 el.style.setProperty('visibility', 'hidden', 'important');
             }
         });
     }"""
     )
+
+
+async def detect_virtual_scroll_container(page):
+    """Detects 'virtual scroll' sites (Locomotive Scroll, Lenis in virtual
+    mode, GSAP ScrollSmoother, ...): the native document reports almost no
+    scrollable height because the real content lives inside a
+    viewport-covering `position:fixed` wrapper that's moved via CSS
+    transform in response to wheel/touch input, instead of native scrolling.
+    Returns True if such a wrapper is found, so the caller can fall back to
+    scroll-and-stitch capture instead of a native full-page screenshot."""
+    return await page.evaluate(
+        """() => {
+        const vh = window.innerHeight;
+        if (document.documentElement.scrollHeight > vh * 1.5) return false;
+
+        const vw = window.innerWidth;
+        for (const el of document.querySelectorAll('*')) {
+            const cs = getComputedStyle(el);
+            if (cs.position !== 'fixed') continue;
+            const rect = el.getBoundingClientRect();
+            const coversViewport = rect.width >= vw * 0.9 && rect.height >= vh * 0.9;
+            if (coversViewport && el.scrollHeight > vh * 1.5) {
+                return true;
+            }
+        }
+        return false;
+    }"""
+    )
+
+
+def _find_vertical_shift(old_frame, new_frame, strip_height: int = 220) -> int:
+    """Measures how many pixels the page visually scrolled between two same-
+    size viewport screenshots (as HxWx3 numpy arrays), by locating the old
+    frame's bottom strip inside the new frame - the same technique classic
+    scrolling-screenshot tools (GoFullPage etc.) use. The strip is fairly
+    tall on purpose: pages with repetitive layouts (list rows, card grids)
+    can otherwise produce false-positive matches against the wrong row.
+
+    For each candidate position, scanned from the largest possible shift
+    downwards, the pixel difference is checked against a sequence of
+    increasingly lenient thresholds; the strictest threshold that yields any
+    match wins, and within that threshold the largest (i.e. first-found)
+    shift is used, since virtual-scroll progress is monotonically forward -
+    preferring the largest confident shift avoids locking onto a
+    coincidental near-zero-shift match. Some sites still have very minor
+    ambient motion (a subtly animated hero image, ...) even once otherwise
+    settled, which the strictest threshold alone would mistake for 'no
+    progress'; the lenient fallback thresholds accommodate that. Returns 0
+    if no match is found at all even at the loosest threshold (treated by
+    the caller as 'no progress')."""
+    import numpy as np
+
+    h = old_frame.shape[0]
+    template = old_frame[h - strip_height:h].astype(np.int16)[:, ::8]
+
+    diffs = []
+    for y in range(0, h - strip_height + 1, 2):
+        region = new_frame[y:y + strip_height].astype(np.int16)[:, ::8]
+        diffs.append((y, np.abs(region - template).mean()))
+
+    for threshold in (6.0, 15.0, 30.0, 50.0):
+        for y, diff in diffs:
+            if diff <= threshold:
+                return h - strip_height - y
+    return 0
+
+
+async def capture_via_scroll_stitching(page, filepath, freeze: bool, settle_ms: int, max_segments: int = 60):
+    """Fallback full-page capture for 'virtual scroll' sites, where the
+    native document height can't be trusted (see detect_virtual_scroll_container).
+    Scrolls the page with real wheel events - which virtual-scroll libraries
+    listen to, unlike a programmatic window.scrollBy - and stitches the
+    resulting viewport screenshots into one tall image. Many such libraries
+    heavily ease/damp the scroll response, so a fixed "one viewport per
+    wheel event" assumption doesn't hold; instead, the actual pixel offset
+    between consecutive captures is measured (see _find_vertical_shift) and
+    only the genuinely new bottom slice of each frame is appended. Stops once
+    a wheel event produces no measurable further progress (the bottom was
+    reached), capped at max_segments as a safety net."""
+    from PIL import Image
+    import numpy as np
+    import io
+
+    if freeze:
+        await freeze_animations(page)
+
+    # Sites elaborate enough to use a virtual-scroll library often also run a
+    # multi-second JS preloader/intro animation before the real page (and its
+    # scroll listeners) are ready. Capturing too early catches that preloader
+    # instead.
+    await page.wait_for_timeout(max(settle_ms, 3000))
+
+    viewport = page.viewport_size
+    vw, vh = viewport["width"], viewport["height"]
+    await page.mouse.move(vw / 2, vh / 2)
+    await hide_fixed_elements(page)
+    await wait_for_images(page)
+    await page.wait_for_timeout(settle_ms)
+
+    def _capture_array(png_bytes):
+        return np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
+
+    first_bytes = await page.screenshot(full_page=False)
+    prev_frame = await asyncio.to_thread(_capture_array, first_bytes)
+    stitched_slices = [prev_frame]
+
+    for _ in range(max_segments):
+        # A burst of many small wheel ticks (mimicking a real, continuous
+        # scroll gesture) reliably advances virtual-scroll libraries much
+        # further than a few large wheel events, which some of them heavily
+        # clamp/dampen per-event regardless of the requested delta.
+        for _ in range(15):
+            await page.mouse.wheel(0, 120)
+            await page.wait_for_timeout(30)
+        await page.wait_for_timeout(max(settle_ms, 500))
+        await hide_fixed_elements(page)
+        await wait_for_images(page)
+
+        new_bytes = await page.screenshot(full_page=False)
+        new_frame = await asyncio.to_thread(_capture_array, new_bytes)
+
+        if np.array_equal(new_frame, prev_frame):
+            break  # wheel input produced no visual change -> bottom reached
+
+        shift = await asyncio.to_thread(_find_vertical_shift, prev_frame, new_frame)
+        if shift <= 0:
+            break  # couldn't confidently measure further progress -> stop rather than corrupt the image
+
+        stitched_slices.append(new_frame[vh - shift:vh])
+        prev_frame = new_frame
+
+    def _stitch():
+        stitched = np.concatenate(stitched_slices, axis=0)
+        Image.fromarray(stitched).save(filepath)
+
+    await asyncio.to_thread(_stitch)
 
 
 async def freeze_animations(page):
@@ -275,6 +418,7 @@ class Crawler:
         self.freeze_animations = not args.no_freeze_animations
         self.settle_ms = int(args.settle_time * 1000)
         self.hide_fixed = not args.no_hide_fixed_elements
+        self.virtual_scroll_fallback = not args.no_virtual_scroll_fallback
         self.output_dir = os.path.join(
             args.output_dir, re.sub(r"[^\w.-]", "_", self.domain)
         )
@@ -330,15 +474,22 @@ class Crawler:
             if self.dismiss_cookies:
                 await dismiss_cookie_banner(page)
             await fix_fixed_backgrounds(page)
-            if self.freeze_animations:
-                await freeze_animations(page)
-            await auto_scroll(page, settle_ms=self.settle_ms)
-            if self.hide_fixed:
-                await hide_fixed_elements(page)
 
             filename = sanitize_filename(url)
             filepath = os.path.join(self.output_dir, filename)
-            await page.screenshot(path=filepath, full_page=True)
+
+            is_virtual_scroll = self.virtual_scroll_fallback and await detect_virtual_scroll_container(page)
+            if is_virtual_scroll:
+                print(f"     (virtual-scroll site detected, using scroll-and-stitch capture)")
+                await capture_via_scroll_stitching(page, filepath, freeze=self.freeze_animations, settle_ms=self.settle_ms)
+            else:
+                if self.freeze_animations:
+                    await freeze_animations(page)
+                await auto_scroll(page, settle_ms=self.settle_ms)
+                if self.hide_fixed:
+                    await hide_fixed_elements(page)
+                await page.screenshot(path=filepath, full_page=True)
+
             self.saved.append((url, filepath))
             print(f"  -> Saved: {filepath}")
 
@@ -448,6 +599,7 @@ def parse_args():
     parser.add_argument("--no-freeze-animations", action="store_true", help="Don't force scroll-reveal/CSS animations to their finished state before the screenshot")
     parser.add_argument("--settle-time", type=float, default=0.8, help="Seconds to wait after scrolling for animations/lazy content to settle before the screenshot (default: 0.8)")
     parser.add_argument("--no-hide-fixed-elements", action="store_true", help="Don't hide position:fixed/sticky elements (nav bars, overlays) before the screenshot")
+    parser.add_argument("--no-virtual-scroll-fallback", action="store_true", help="Don't use scroll-and-stitch capture for 'virtual scroll' sites (Locomotive Scroll, Lenis, ...)")
     return parser.parse_args()
 
 

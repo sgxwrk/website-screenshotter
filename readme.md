@@ -11,6 +11,7 @@ An automated, Python-based web crawler that crawls a website starting from a giv
 * **Clean, Unique Filenames:** Automatically converts URLs into valid image names; query parameters are kept unique via a hash.
 * **Cookie Banner Handling:** Automatically tries to accept cookie consent banners before taking the screenshot, so they don't end up in the shot (can be disabled with `--no-dismiss-cookies`).
 * **Clean Fixed/Sticky Elements:** Hides `position: fixed`/`sticky` elements (nav bars, off-canvas menus, "back to top" buttons) right before the screenshot, since full-page capture can otherwise duplicate them or place them at the wrong spot (can be disabled with `--no-hide-fixed-elements`).
+* **Virtual-Scroll Site Support:** Automatically detects "smooth scroll" libraries (Locomotive Scroll, Lenis, ...) that hijack native scrolling, and falls back to driving real scroll input and stitching the resulting captures together, since a native full-page screenshot renders blank/incomplete on such sites (can be disabled with `--no-virtual-scroll-fallback`).
 * **Respects robots.txt:** Honors the target site's `robots.txt` by default (can be disabled with `--ignore-robots`).
 * **Polite:** Small delay between requests (`--delay`) and optional blocking of tracking/ads requests, so the target site isn't put under unnecessary load.
 * **Loop Protection:** Automatically detects already visited or already scheduled pages.
@@ -24,6 +25,7 @@ Python dependencies ([`requirements.txt`](requirements.txt)):
 
 * [Playwright](https://playwright.dev/python/) — browser automation and screenshotting
 * [Beautiful Soup](https://www.crummy.com/software/BeautifulSoup/) — HTML link extraction
+* [Pillow](https://python-pillow.org/) & [NumPy](https://numpy.org/) — stitching screenshots together for virtual-scroll sites
 
 ## 🚀 Getting Started
 
@@ -72,6 +74,7 @@ All options are passed as command-line flags to `run.py`:
 | `--no-freeze-animations` | off | Don't force scroll-reveal/CSS animations to their finished state before the screenshot |
 | `--settle-time` | 0.8 | Seconds to wait after scrolling for animations/lazy content to settle before the screenshot |
 | `--no-hide-fixed-elements` | off | Don't hide `position: fixed`/`sticky` elements (nav bars, overlays) before the screenshot |
+| `--no-virtual-scroll-fallback` | off | Don't use scroll-and-stitch capture for "virtual scroll" sites (Locomotive Scroll, Lenis, ...) |
 
 Example with higher concurrency and more pages:
 
@@ -84,6 +87,8 @@ python3 run.py https://example.com --max-pages 100 --concurrency 5
 > **Note:** Cookie banner dismissal is a best-effort heuristic (known selectors for common consent tools like OneTrust, Cookiebot, Usercentrics, plus generic "accept all" text matching in English/German). It won't catch every consent tool, especially some IAB TCF/GDPR iframe-based implementations.
 
 > **Note:** Full-page screenshots resize the page to its full height before capturing, which recalculates any CSS sized in viewport units (`vh`) and repositions `position: fixed`/`sticky` elements relative to that oversized viewport - a general quirk of full-page screenshot tools. Rather than risk misplaced or stretched nav overlays and decorative backgrounds, fixed/sticky elements are hidden for the shot by default (see `--no-hide-fixed-elements` above).
+
+> **Note:** Virtual-scroll capture (see above) measures real scroll progress between captures instead of assuming a fixed step size, since these libraries often ease/damp scrolling unpredictably. On sites with unusually heavy damping or non-deterministic scroll behavior, this can occasionally duplicate a small section (e.g. a footer) in the final image rather than losing content - a deliberate "prefer a harmless repeat over silently dropping content" tradeoff.
 
 ## ⚠️ Responsible Use
 
