@@ -9,6 +9,7 @@ An automated, Python-based web crawler that crawls a website starting from a giv
 * **Organized Structure:** Automatically saves screenshots per domain into their own subfolders (e.g. `screenshots/example_com/`).
 * **Lazy-Loading Support:** Automatic scrolling ensures lazily loaded images are captured too.
 * **Clean, Unique Filenames:** Automatically converts URLs into valid image names; query parameters are kept unique via a hash.
+* **Cookie Banner Handling:** Automatically tries to accept cookie consent banners before taking the screenshot, so they don't end up in the shot (can be disabled with `--no-dismiss-cookies`).
 * **Respects robots.txt:** Honors the target site's `robots.txt` by default (can be disabled with `--ignore-robots`).
 * **Polite:** Small delay between requests (`--delay`) and optional blocking of tracking/ads requests, so the target site isn't put under unnecessary load.
 * **Loop Protection:** Automatically detects already visited or already scheduled pages.
@@ -66,12 +67,15 @@ All options are passed as command-line flags to `run.py`:
 | `--output-dir` | screenshots | Base output directory |
 | `--ignore-robots` | off | Ignore `robots.txt` (not recommended) |
 | `--no-block-trackers` | off | Don't block known tracking/ads requests |
+| `--no-dismiss-cookies` | off | Don't try to auto-accept cookie consent banners |
 
 Example with higher concurrency and more pages:
 
 ```bash
 python3 run.py https://example.com --max-pages 100 --concurrency 5
 ```
+
+> **Note:** Cookie banner dismissal is a best-effort heuristic (known selectors for common consent tools like OneTrust, Cookiebot, Usercentrics, plus generic "accept all" text matching in English/German). It won't catch every consent tool, especially some IAB TCF/GDPR iframe-based implementations.
 
 ## ⚠️ Responsible Use
 

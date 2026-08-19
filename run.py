@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import sys
+import time
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -24,6 +25,35 @@ BLOCKED_RESOURCE_DOMAINS = (
     "google-analytics.com", "googletagmanager.com", "doubleclick.net",
     "facebook.net", "facebook.com/tr", "hotjar.com", "segment.com",
     "mixpanel.com", "intercom.io", "amplitude.com",
+)
+
+# CSS selectors for the "accept all" button of common cookie consent tools.
+COOKIE_CONSENT_SELECTORS = (
+    "#onetrust-accept-btn-handler",
+    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+    "#CybotCookiebotDialogBodyButtonAccept",
+    "button[data-testid='uc-accept-all-button']",
+    "#didomi-notice-agree-button",
+    ".qc-cmp2-summary-buttons button[mode='primary']",
+    "#truste-consent-button",
+    ".cmplz-accept",
+    ".cky-btn-accept",
+    "._brlbs-btn-accept-all",
+    ".iubenda-cs-accept-btn",
+    ".cm-btn-accept-all",
+    ".osano-cm-accept-all",
+    "button[aria-label='Accept all']",
+    "button[aria-label='Accept cookies']",
+)
+
+# Generic fallback: text of "accept" buttons across common consent banners
+# (English and German), matched case-insensitively against the full button text.
+COOKIE_CONSENT_TEXT_PATTERN = re.compile(
+    r"^\s*(accept all( cookies)?|accept cookies?|accept|i agree|agree|allow all|"
+    r"allow cookies|got it|i understand|alle akzeptieren|akzeptieren"
+    r"( (und|&) schließen)?|zustimmen|einverstanden|alle (cookies )?erlauben|"
+    r"verstanden)\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -59,6 +89,75 @@ def is_crawlable_link(url: str) -> bool:
     return ext not in SKIP_EXTENSIONS
 
 
+async def _try_click(locator) -> bool:
+    try:
+        if await locator.count() == 0:
+            return False
+        first = locator.first
+        await first.wait_for(state="visible", timeout=800)
+        await first.click(timeout=800)
+        return True
+    except Exception:
+        return False
+
+
+async def _finish_dismiss(page) -> bool:
+    """After accepting, some (mostly server-rendered) cookie banners only set
+    a consent cookie and keep the banner markup in the DOM until the next
+    navigation. Reload once so the screenshot is guaranteed to be clean."""
+    await page.wait_for_timeout(300)
+    try:
+        await page.reload(wait_until="load", timeout=10000)
+    except Exception:
+        pass
+    return True
+
+
+async def dismiss_cookie_banner(page, timeout_ms: int = 4000) -> bool:
+    """Best-effort attempt to accept a cookie consent banner, so it doesn't
+    show up in the screenshot. Checks the main page and any iframes (many
+    consent tools render inside one), first via known selectors for common
+    consent platforms, then via generic 'accept' button text matching.
+    Silently gives up if nothing matches within the timeout - not every
+    consent tool (e.g. some IAB TCF/GDPR frameworks) can be covered generically.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    contexts = [page] + list(page.frames)[1:]
+
+    for ctx in contexts:
+        if time.monotonic() > deadline:
+            return False
+        for selector in COOKIE_CONSENT_SELECTORS:
+            if await _try_click(ctx.locator(selector)):
+                return await _finish_dismiss(page)
+
+    for ctx in contexts:
+        if time.monotonic() > deadline:
+            return False
+        try:
+            button = ctx.get_by_role("button", name=COOKIE_CONSENT_TEXT_PATTERN)
+            if await _try_click(button):
+                return await _finish_dismiss(page)
+        except Exception:
+            continue
+
+    # Broadest fallback: many custom cookie banners use a <div>/<a>/<span>
+    # with a click handler instead of a semantic <button>. Since the pattern
+    # is anchored (^...$), this only matches elements whose *entire* text is
+    # just the accept label, not larger containers with more text.
+    for ctx in contexts:
+        if time.monotonic() > deadline:
+            return False
+        try:
+            text_el = ctx.get_by_text(COOKIE_CONSENT_TEXT_PATTERN)
+            if await _try_click(text_el):
+                return await _finish_dismiss(page)
+        except Exception:
+            continue
+
+    return False
+
+
 async def auto_scroll(page):
     """Scrolls the page down to trigger lazy-loaded images."""
     await page.evaluate(
@@ -90,6 +189,7 @@ class Crawler:
         self.delay = args.delay
         self.timeout_ms = args.timeout * 1000
         self.block_trackers = not args.no_block_trackers
+        self.dismiss_cookies = not args.no_dismiss_cookies
         self.output_dir = os.path.join(
             args.output_dir, re.sub(r"[^\w.-]", "_", self.domain)
         )
@@ -142,6 +242,8 @@ class Crawler:
         await self._setup_routing(page)
         try:
             await page.goto(url, wait_until="load", timeout=self.timeout_ms)
+            if self.dismiss_cookies:
+                await dismiss_cookie_banner(page)
             await auto_scroll(page)
 
             filename = sanitize_filename(url)
@@ -252,6 +354,7 @@ def parse_args():
     parser.add_argument("--output-dir", default="screenshots", help="Base output directory (default: screenshots)")
     parser.add_argument("--ignore-robots", action="store_true", help="Ignore robots.txt (not recommended)")
     parser.add_argument("--no-block-trackers", action="store_true", help="Don't block known tracking/ads requests")
+    parser.add_argument("--no-dismiss-cookies", action="store_true", help="Don't try to auto-accept cookie consent banners")
     return parser.parse_args()
 
 
