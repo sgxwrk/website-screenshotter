@@ -7,7 +7,7 @@ An automated, Python-based web crawler that crawls a website starting from a giv
 * **Parallel:** Crawls multiple pages at once (configurable via `--concurrency`).
 * **Automatic & Complete:** Captures the entire length of the page (including scroll areas).
 * **Organized Structure:** Automatically saves screenshots per domain into their own subfolders (e.g. `screenshots/example_com/`).
-* **Lazy-Loading & Scroll-Reveal Support:** Automatic scrolling triggers lazily loaded images and scroll-reveal animations (fade/slide-in effects), and CSS transitions are forced to their finished state so elements aren't caught mid-animation (can be disabled with `--no-freeze-animations`).
+* **Lazy-Loading & Scroll-Reveal Support:** Automatic scrolling triggers lazily loaded images and scroll-reveal animations (fade/slide-in effects). CSS transitions are forced to their finished state (can be disabled with `--no-freeze-animations`), image loading is actively waited for (not just triggered), and a configurable settle delay (`--settle-time`) gives everything time to finish before the screenshot - correctness over speed.
 * **Clean, Unique Filenames:** Automatically converts URLs into valid image names; query parameters are kept unique via a hash.
 * **Cookie Banner Handling:** Automatically tries to accept cookie consent banners before taking the screenshot, so they don't end up in the shot (can be disabled with `--no-dismiss-cookies`).
 * **Respects robots.txt:** Honors the target site's `robots.txt` by default (can be disabled with `--ignore-robots`).
@@ -69,12 +69,15 @@ All options are passed as command-line flags to `run.py`:
 | `--no-block-trackers` | off | Don't block known tracking/ads requests |
 | `--no-dismiss-cookies` | off | Don't try to auto-accept cookie consent banners |
 | `--no-freeze-animations` | off | Don't force scroll-reveal/CSS animations to their finished state before the screenshot |
+| `--settle-time` | 0.8 | Seconds to wait after scrolling for animations/lazy content to settle before the screenshot |
 
 Example with higher concurrency and more pages:
 
 ```bash
 python3 run.py https://example.com --max-pages 100 --concurrency 5
 ```
+
+> **Tip:** If screenshots still catch animations mid-flight or lazy content missing on a particular site, increase `--settle-time` (e.g. `--settle-time 2`). This is especially relevant with `--no-freeze-animations`, where real CSS transitions need genuine wall-clock time to finish.
 
 > **Note:** Cookie banner dismissal is a best-effort heuristic (known selectors for common consent tools like OneTrust, Cookiebot, Usercentrics, plus generic "accept all" text matching in English/German). It won't catch every consent tool, especially some IAB TCF/GDPR iframe-based implementations.
 

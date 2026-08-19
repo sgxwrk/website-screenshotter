@@ -188,14 +188,38 @@ async def freeze_animations(page):
     )
 
 
-async def auto_scroll(page):
+async def wait_for_images(page, timeout_ms: int = 8000):
+    """Waits for every currently-present <img> to actually finish loading
+    (not just be triggered), so lazily-loaded images end up fully rendered
+    instead of caught half-loaded or as broken-image placeholders. Capped by
+    timeout_ms so one slow/broken image can't stall the whole crawl."""
+    try:
+        await page.evaluate(
+            """(timeoutMs) => Promise.race([
+                Promise.all(
+                    Array.from(document.images)
+                        .filter((img) => !img.complete)
+                        .map((img) => new Promise((resolve) => {
+                            img.addEventListener('load', resolve, { once: true });
+                            img.addEventListener('error', resolve, { once: true });
+                        }))
+                ),
+                new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+            ])""",
+            timeout_ms,
+        )
+    except Exception:
+        pass
+
+
+async def auto_scroll(page, settle_ms: int = 800):
     """Scrolls the page down to trigger lazy-loaded images and scroll-reveal
-    animations, then waits briefly for any JS-driven (non-CSS) animations to
-    settle. Deliberately does NOT scroll back to the top afterwards: Playwright's
-    full-page screenshot captures the whole document regardless of scroll
-    position, and scrolling back up would make many scroll-reveal libraries
-    (e.g. AOS without `data-aos-once`) hide elements again right before the
-    screenshot is taken."""
+    animations, waits for images to actually finish loading, then waits a bit
+    longer for any JS-driven (non-CSS) animations to settle. Deliberately does
+    NOT scroll back to the top afterwards: Playwright's full-page screenshot
+    captures the whole document regardless of scroll position, and scrolling
+    back up would make many scroll-reveal libraries (e.g. AOS without
+    `data-aos-once`) hide elements again right before the screenshot is taken."""
     await page.evaluate(
         """async () => {
         await new Promise((resolve) => {
@@ -213,7 +237,8 @@ async def auto_scroll(page):
         });
     }"""
     )
-    await page.wait_for_timeout(400)
+    await wait_for_images(page)
+    await page.wait_for_timeout(settle_ms)
 
 
 class Crawler:
@@ -227,6 +252,7 @@ class Crawler:
         self.block_trackers = not args.no_block_trackers
         self.dismiss_cookies = not args.no_dismiss_cookies
         self.freeze_animations = not args.no_freeze_animations
+        self.settle_ms = int(args.settle_time * 1000)
         self.output_dir = os.path.join(
             args.output_dir, re.sub(r"[^\w.-]", "_", self.domain)
         )
@@ -284,7 +310,7 @@ class Crawler:
             await fix_fixed_backgrounds(page)
             if self.freeze_animations:
                 await freeze_animations(page)
-            await auto_scroll(page)
+            await auto_scroll(page, settle_ms=self.settle_ms)
 
             filename = sanitize_filename(url)
             filepath = os.path.join(self.output_dir, filename)
@@ -396,6 +422,7 @@ def parse_args():
     parser.add_argument("--no-block-trackers", action="store_true", help="Don't block known tracking/ads requests")
     parser.add_argument("--no-dismiss-cookies", action="store_true", help="Don't try to auto-accept cookie consent banners")
     parser.add_argument("--no-freeze-animations", action="store_true", help="Don't force scroll-reveal/CSS animations to their finished state before the screenshot")
+    parser.add_argument("--settle-time", type=float, default=0.8, help="Seconds to wait after scrolling for animations/lazy content to settle before the screenshot (default: 0.8)")
     return parser.parse_args()
 
 
