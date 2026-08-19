@@ -158,8 +158,44 @@ async def dismiss_cookie_banner(page, timeout_ms: int = 4000) -> bool:
     return False
 
 
+async def fix_fixed_backgrounds(page):
+    """`background-attachment: fixed` is anchored to the viewport. Since a
+    full-page screenshot renders the whole document as one tall viewport
+    (regardless of current scroll position), fixed backgrounds can end up
+    misplaced or blank. Forcing them to scroll with the page avoids this -
+    a well-known workaround for full-page screenshot tools."""
+    await page.add_style_tag(
+        content="*, *::before, *::after { background-attachment: scroll !important; }"
+    )
+
+
+async def freeze_animations(page):
+    """Forces CSS transitions/animations to complete instantly. Many sites
+    reveal elements on scroll (fade/slide-in) via a CSS transition that only
+    starts once the element enters the viewport; without this, a screenshot
+    taken right after scrolling past it can catch that transition mid-flight
+    (e.g. half-faded-in) instead of its finished, fully visible state."""
+    await page.add_style_tag(
+        content="""
+        *, *::before, *::after {
+            animation-duration: 0s !important;
+            animation-delay: 0s !important;
+            transition-duration: 0s !important;
+            transition-delay: 0s !important;
+            scroll-behavior: auto !important;
+        }
+        """
+    )
+
+
 async def auto_scroll(page):
-    """Scrolls the page down to trigger lazy-loaded images."""
+    """Scrolls the page down to trigger lazy-loaded images and scroll-reveal
+    animations, then waits briefly for any JS-driven (non-CSS) animations to
+    settle. Deliberately does NOT scroll back to the top afterwards: Playwright's
+    full-page screenshot captures the whole document regardless of scroll
+    position, and scrolling back up would make many scroll-reveal libraries
+    (e.g. AOS without `data-aos-once`) hide elements again right before the
+    screenshot is taken."""
     await page.evaluate(
         """async () => {
         await new Promise((resolve) => {
@@ -177,7 +213,7 @@ async def auto_scroll(page):
         });
     }"""
     )
-    await page.evaluate("window.scrollTo(0, 0)")
+    await page.wait_for_timeout(400)
 
 
 class Crawler:
@@ -190,6 +226,7 @@ class Crawler:
         self.timeout_ms = args.timeout * 1000
         self.block_trackers = not args.no_block_trackers
         self.dismiss_cookies = not args.no_dismiss_cookies
+        self.freeze_animations = not args.no_freeze_animations
         self.output_dir = os.path.join(
             args.output_dir, re.sub(r"[^\w.-]", "_", self.domain)
         )
@@ -244,6 +281,9 @@ class Crawler:
             await page.goto(url, wait_until="load", timeout=self.timeout_ms)
             if self.dismiss_cookies:
                 await dismiss_cookie_banner(page)
+            await fix_fixed_backgrounds(page)
+            if self.freeze_animations:
+                await freeze_animations(page)
             await auto_scroll(page)
 
             filename = sanitize_filename(url)
@@ -355,6 +395,7 @@ def parse_args():
     parser.add_argument("--ignore-robots", action="store_true", help="Ignore robots.txt (not recommended)")
     parser.add_argument("--no-block-trackers", action="store_true", help="Don't block known tracking/ads requests")
     parser.add_argument("--no-dismiss-cookies", action="store_true", help="Don't try to auto-accept cookie consent banners")
+    parser.add_argument("--no-freeze-animations", action="store_true", help="Don't force scroll-reveal/CSS animations to their finished state before the screenshot")
     return parser.parse_args()
 
 
