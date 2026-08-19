@@ -169,6 +169,27 @@ async def fix_fixed_backgrounds(page):
     )
 
 
+async def hide_fixed_elements(page):
+    """`position: fixed`/`sticky` elements (nav bars, off-canvas menus,
+    "back to top" buttons, ...) are anchored to the viewport. Since a
+    full-page screenshot renders the whole document as one oversized
+    viewport, these elements can end up duplicated, badly stretched, or
+    floating at a seemingly random spot mid-page instead of pinned to the
+    real screen edge. A screenshot is a static record, so hiding them right
+    before capture avoids these glitches entirely - a standard technique for
+    full-page screenshot tools."""
+    await page.evaluate(
+        """() => {
+        document.querySelectorAll('*').forEach((el) => {
+            const position = getComputedStyle(el).position;
+            if (position === 'fixed' || position === 'sticky') {
+                el.style.setProperty('visibility', 'hidden', 'important');
+            }
+        });
+    }"""
+    )
+
+
 async def freeze_animations(page):
     """Forces CSS transitions/animations to complete instantly. Many sites
     reveal elements on scroll (fade/slide-in) via a CSS transition that only
@@ -253,6 +274,7 @@ class Crawler:
         self.dismiss_cookies = not args.no_dismiss_cookies
         self.freeze_animations = not args.no_freeze_animations
         self.settle_ms = int(args.settle_time * 1000)
+        self.hide_fixed = not args.no_hide_fixed_elements
         self.output_dir = os.path.join(
             args.output_dir, re.sub(r"[^\w.-]", "_", self.domain)
         )
@@ -311,6 +333,8 @@ class Crawler:
             if self.freeze_animations:
                 await freeze_animations(page)
             await auto_scroll(page, settle_ms=self.settle_ms)
+            if self.hide_fixed:
+                await hide_fixed_elements(page)
 
             filename = sanitize_filename(url)
             filepath = os.path.join(self.output_dir, filename)
@@ -423,6 +447,7 @@ def parse_args():
     parser.add_argument("--no-dismiss-cookies", action="store_true", help="Don't try to auto-accept cookie consent banners")
     parser.add_argument("--no-freeze-animations", action="store_true", help="Don't force scroll-reveal/CSS animations to their finished state before the screenshot")
     parser.add_argument("--settle-time", type=float, default=0.8, help="Seconds to wait after scrolling for animations/lazy content to settle before the screenshot (default: 0.8)")
+    parser.add_argument("--no-hide-fixed-elements", action="store_true", help="Don't hide position:fixed/sticky elements (nav bars, overlays) before the screenshot")
     return parser.parse_args()
 
 
