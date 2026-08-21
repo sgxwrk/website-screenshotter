@@ -22,6 +22,20 @@ CONCURRENCY="${CONCURRENCY:-3}"
 DELAY="${DELAY:-0.5}"
 TIMEOUT="${TIMEOUT:-30}"
 SETTLE_TIME="${SETTLE_TIME:-0.8}"
+IGNORE_ROBOTS="${IGNORE_ROBOTS:-false}"
+
+RUN_PY_ARGS=(
+    --output-dir "$OUTPUT_DIR"
+    --timestamped-output
+    --max-pages "$MAX_PAGES"
+    --concurrency "$CONCURRENCY"
+    --delay "$DELAY"
+    --timeout "$TIMEOUT"
+    --settle-time "$SETTLE_TIME"
+)
+if [ "$IGNORE_ROBOTS" = "true" ]; then
+    RUN_PY_ARGS+=(--ignore-robots)
+fi
 
 if [ ! -f "$URLS_FILE" ]; then
     echo "No queue file found at $URLS_FILE - nothing to do."
@@ -59,15 +73,7 @@ while IFS= read -r line; do
     # extra_args is intentionally unquoted below so its whitespace-separated
     # flags (if any) are split into separate arguments, not one literal string.
     # shellcheck disable=SC2086
-    if python3 run.py "$url" \
-        --output-dir "$OUTPUT_DIR" \
-        --timestamped-output \
-        --max-pages "$MAX_PAGES" \
-        --concurrency "$CONCURRENCY" \
-        --delay "$DELAY" \
-        --timeout "$TIMEOUT" \
-        --settle-time "$SETTLE_TIME" \
-        $extra_args; then
+    if python3 run.py "$url" "${RUN_PY_ARGS[@]}" $extra_args; then
         SUCCEEDED=$((SUCCEEDED + 1))
     else
         FAILED=$((FAILED + 1))

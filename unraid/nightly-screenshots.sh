@@ -17,6 +17,7 @@ docker run --rm \
     -e "TZ=$(cat /etc/timezone 2>/dev/null || echo UTC)" \
     -e MAX_PAGES=50 \
     -e CONCURRENCY=3 \
+    -e IGNORE_ROBOTS=true \
     "$IMAGE"
 
 SUMMARY_FILE="$OUTPUT_DIR/last-summary.txt"
