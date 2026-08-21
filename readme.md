@@ -142,7 +142,7 @@ Apps tab → search "User Scripts" → Install (skip if you already have it).
 
 - Add one test URL to `queue/urls.txt`.
 - In User Scripts, click **Run in Background** - its log streams live in the WebGUI.
-- Confirm: a `<domain>/<timestamp>/` folder with a `.png` screenshot appears under the `website-screenshots` share, `urls.txt` is back to just its comment lines, and a native Unraid notification (bell icon) appeared.
+- Confirm: a `<domain>/<timestamp>/` folder with a `.png` screenshot appears under the `website-screenshots` share, `urls.txt` is back to just its comment lines, and a new entry was appended to `queue/run-log.txt`.
 
 ### 7. Set the nightly schedule
 
@@ -151,6 +151,8 @@ In the script's settings, use the schedule dropdown - pick **Custom** and enter 
 ### 8. Day-to-day use
 
 Add URLs to `queue/urls.txt` whenever (edit over the network share, or via Unraid's file manager). Each one is picked up, screenshotted, and removed from the list at the next scheduled run. Failures are logged to `queue/failed.txt` (with a timestamp and reason) instead of being retried automatically - check back on it occasionally.
+
+Every run - success, partial failure, or total failure - gets a timestamped entry appended to `queue/run-log.txt`, so you can review history without digging through Docker logs. To keep routine runs quiet, an Unraid notification only fires when a run fails *entirely* (every queued URL failed that night, e.g. a broken image or a network problem) - not for routine successes or the occasional flaky site.
 
 Batch-wide settings (`MAX_PAGES`, `CONCURRENCY`, `DELAY`, `TIMEOUT`, `SETTLE_TIME`, `IGNORE_ROBOTS` - matching the `run.py` flags of the same name, `IGNORE_ROBOTS=true` for `--ignore-robots`) are set as environment variables on the `docker run` call in `unraid/nightly-screenshots.sh`. To override any of them - or any other `run.py` flag - for just one site, append it to that site's line in `urls.txt` instead (see the example above).
 
