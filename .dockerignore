@@ -1,0 +1,6 @@
+.git
+.gitignore
+screenshots/
+.claude/
+*.md
+LICENSE

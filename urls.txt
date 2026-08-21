@@ -1,0 +1,2 @@
+# Add one URL per line - each is screenshotted once, then removed from this file.
+# Failures are moved to failed.txt instead of retried automatically.
