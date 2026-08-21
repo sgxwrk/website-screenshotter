@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -328,13 +329,9 @@ async def capture_via_scroll_stitching(page, filepath, freeze: bool, settle_ms: 
 
     def _stitch():
         stitched = np.concatenate(stitched_slices, axis=0)
-        image = Image.fromarray(stitched)
-        if image_format == "webp":
-            image.save(filepath, "WEBP", lossless=True)
-        else:
-            image.save(filepath)
+        return _save_screenshot_image(Image.fromarray(stitched), filepath, image_format)
 
-    await asyncio.to_thread(_stitch)
+    return await asyncio.to_thread(_stitch)
 
 
 async def freeze_animations(page):
@@ -356,11 +353,31 @@ async def freeze_animations(page):
     )
 
 
-def _save_as_webp(png_bytes: bytes, filepath: str):
+# libwebp hard limit: a single WebP image cannot exceed this many pixels in
+# either dimension. Full-page screenshots of very long single-page sites can
+# exceed it, so saving falls back to PNG (no such limit) for that one
+# screenshot rather than losing it entirely.
+WEBP_MAX_DIMENSION = 16383
+
+
+def _save_screenshot_image(image, filepath: str, image_format: str) -> str:
+    """Saves a PIL Image in the requested format, returning the filepath
+    actually used - which may differ from `filepath` (a .png swapped in for
+    the requested .webp) if the WEBP_MAX_DIMENSION fallback kicked in."""
+    if image_format == "webp" and max(image.size) <= WEBP_MAX_DIMENSION:
+        image.save(filepath, "WEBP", lossless=True)
+        return filepath
+    if image_format == "webp":
+        filepath = os.path.splitext(filepath)[0] + ".png"
+    image.save(filepath)
+    return filepath
+
+
+def _save_screenshot_bytes(png_bytes: bytes, filepath: str, image_format: str) -> str:
     from PIL import Image
     import io
 
-    Image.open(io.BytesIO(png_bytes)).save(filepath, "WEBP", lossless=True)
+    return _save_screenshot_image(Image.open(io.BytesIO(png_bytes)), filepath, image_format)
 
 
 async def wait_for_images(page, timeout_ms: int = 8000):
@@ -434,6 +451,12 @@ class Crawler:
         self.output_dir = os.path.join(
             args.output_dir, re.sub(r"[^\w.-]", "_", self.domain)
         )
+        if args.timestamped_output:
+            # Groups repeated runs of the same site under it (domain first),
+            # each in its own timestamped subfolder - so re-running the same
+            # URL later never overwrites a previous run's screenshots, even
+            # if it happens more than once on the same day.
+            self.output_dir = os.path.join(self.output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.robot_parser = None
@@ -493,7 +516,7 @@ class Crawler:
             is_virtual_scroll = self.virtual_scroll_fallback and await detect_virtual_scroll_container(page)
             if is_virtual_scroll:
                 print(f"     (virtual-scroll site detected, using scroll-and-stitch capture)")
-                await capture_via_scroll_stitching(
+                filepath = await capture_via_scroll_stitching(
                     page, filepath, freeze=self.freeze_animations, settle_ms=self.settle_ms,
                     image_format=self.image_format,
                 )
@@ -505,7 +528,7 @@ class Crawler:
                     await hide_fixed_elements(page)
                 if self.image_format == "webp":
                     screenshot_bytes = await page.screenshot(full_page=True)
-                    await asyncio.to_thread(_save_as_webp, screenshot_bytes, filepath)
+                    filepath = await asyncio.to_thread(_save_screenshot_bytes, screenshot_bytes, filepath, self.image_format)
                 else:
                     await page.screenshot(path=filepath, full_page=True)
 
@@ -620,6 +643,7 @@ def parse_args():
     parser.add_argument("--no-hide-fixed-elements", action="store_true", help="Don't hide position:fixed/sticky elements (nav bars, overlays) before the screenshot")
     parser.add_argument("--no-virtual-scroll-fallback", action="store_true", help="Don't use scroll-and-stitch capture for 'virtual scroll' sites (Locomotive Scroll, Lenis, ...)")
     parser.add_argument("--format", choices=["png", "webp"], default="png", help="Screenshot image format (default: png). webp is saved lossless.")
+    parser.add_argument("--timestamped-output", action="store_true", help="Save under <output-dir>/<domain>/<timestamp>/ instead of <output-dir>/<domain>/ - so repeated runs of the same site don't overwrite each other")
     return parser.parse_args()
 
 

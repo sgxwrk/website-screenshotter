@@ -11,8 +11,6 @@ QUEUE_DIR="/mnt/user/appdata/website-screenshotter/queue"
 OUTPUT_DIR="/mnt/user/website-screenshots"
 IMAGE="website-screenshotter-batch"
 
-TODAY="$(date +%F)"
-
 docker run --rm \
     -v "$QUEUE_DIR:/data" \
     -v "$OUTPUT_DIR:/output" \
@@ -21,7 +19,7 @@ docker run --rm \
     -e CONCURRENCY=3 \
     "$IMAGE"
 
-SUMMARY_FILE="$OUTPUT_DIR/$TODAY/summary.txt"
+SUMMARY_FILE="$OUTPUT_DIR/last-summary.txt"
 
 # No summary means the queue was empty this run - stay quiet, don't
 # notify every night if nothing was added to process.

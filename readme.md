@@ -77,7 +77,8 @@ All options are passed as command-line flags to `run.py`:
 | `--settle-time` | 0.8 | Seconds to wait after scrolling for animations/lazy content to settle before the screenshot |
 | `--no-hide-fixed-elements` | off | Don't hide `position: fixed`/`sticky` elements (nav bars, overlays) before the screenshot |
 | `--no-virtual-scroll-fallback` | off | Don't use scroll-and-stitch capture for "virtual scroll" sites (Locomotive Scroll, Lenis, ...) |
-| `--format` | png | Screenshot image format: `png` or `webp` (saved lossless - same quality, typically 20-30% smaller files) |
+| `--format` | png | Screenshot image format: `png` or `webp` (saved lossless - same quality, typically 20-30% smaller files; automatically falls back to `png` for the rare screenshot taller than WebP's 16383px limit) |
+| `--timestamped-output` | off | Save under `<output-dir>/<domain>/<timestamp>/` instead of `<output-dir>/<domain>/`, so repeated runs of the same site don't overwrite each other |
 
 Example with higher concurrency and more pages:
 
@@ -95,7 +96,12 @@ python3 run.py https://example.com --max-pages 100 --concurrency 5
 
 ## 🤖 Automated queue processing on Unraid
 
-Besides running `run.py` directly, this repo also includes a Docker setup for unattended, scheduled processing on a home server (e.g. Unraid): drop URLs into a queue file, and each one is screenshotted once and then removed from the queue - a one-shot list, not a recurring watch list. Screenshots are saved under a **dated subfolder per run** (`screenshots/<domain>/<date>/...`), so re-adding the same URL later creates a new snapshot alongside the previous one instead of overwriting it. Output is saved as lossless **WebP** (same quality as PNG, meaningfully smaller) to keep long-term storage in check. This is entirely additive - running `run.py` directly (as above) is unaffected and needs no Docker at all.
+Besides running `run.py` directly, this repo also includes a Docker setup for unattended, scheduled processing on a home server (e.g. Unraid): drop URLs into a queue file, and each one is screenshotted once and then removed from the queue - a one-shot list, not a recurring watch list. Screenshots are saved **grouped by domain, then by timestamp** (`screenshots/<domain>/<date>_<time>/...`, via `--timestamped-output`), so re-adding the same URL later - even more than once on the same day - creates a new snapshot alongside the previous ones instead of overwriting anything. This is entirely additive - running `run.py` directly (as above) is unaffected and needs no Docker at all.
+
+A queue line can optionally carry extra `run.py` flags after the URL, overriding the batch defaults for just that one site, e.g.:
+```
+https://example.com --max-pages 20 --format webp
+```
 
 ### 1. Get the project onto the server
 
@@ -136,7 +142,7 @@ Apps tab → search "User Scripts" → Install (skip if you already have it).
 
 - Add one test URL to `queue/urls.txt`.
 - In User Scripts, click **Run in Background** - its log streams live in the WebGUI.
-- Confirm: a dated folder with a `.webp` screenshot appears under the `website-screenshots` share, `urls.txt` is back to just its comment lines, and a native Unraid notification (bell icon) appeared.
+- Confirm: a `<domain>/<timestamp>/` folder with a `.png` screenshot appears under the `website-screenshots` share, `urls.txt` is back to just its comment lines, and a native Unraid notification (bell icon) appeared.
 
 ### 7. Set the nightly schedule
 
@@ -146,7 +152,7 @@ In the script's settings, use the schedule dropdown - pick **Custom** and enter 
 
 Add URLs to `queue/urls.txt` whenever (edit over the network share, or via Unraid's file manager). Each one is picked up, screenshotted, and removed from the list at the next scheduled run. Failures are logged to `queue/failed.txt` (with a timestamp and reason) instead of being retried automatically - check back on it occasionally.
 
-Batch-wide settings (`MAX_PAGES`, `CONCURRENCY`, `DELAY`, `TIMEOUT`, `SETTLE_TIME` - matching the `run.py` flags of the same name) are set as environment variables on the `docker run` call in `unraid/nightly-screenshots.sh`.
+Batch-wide settings (`MAX_PAGES`, `CONCURRENCY`, `DELAY`, `TIMEOUT`, `SETTLE_TIME` - matching the `run.py` flags of the same name) are set as environment variables on the `docker run` call in `unraid/nightly-screenshots.sh`. To override any of them - or any other `run.py` flag - for just one site, append it to that site's line in `urls.txt` instead (see the example above).
 
 ## ⚠️ Responsible Use
 
